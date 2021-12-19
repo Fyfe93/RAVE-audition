@@ -24,20 +24,31 @@ RAVEAuditionAudioProcessorEditor::RAVEAuditionAudioProcessorEditor (RAVEAudition
     addAndMakeVisible(&mTemperatureSlider);
     mTemperatureSlider.setSliderStyle(Slider::SliderStyle::RotaryVerticalDrag);
     mTemperatureSlider.setTextBoxStyle(Slider::TextEntryBoxPosition::TextBoxBelow, false, 50, 20);
-    mTemperatureSlider.setColour(Slider::ColourIds::rotarySliderFillColourId, Colours::deeppink);
+    const Colour tempColour(0xfffe00ee);
+    mTemperatureSlider.setColour(Slider::ColourIds::rotarySliderFillColourId, tempColour);
     mTemperatureSlider.setColour(Slider::ColourIds::thumbColourId, Colours::white);
     mTemperatureSliderAttachment.reset(new SliderAttachment(mAVTS,
                                                             rave_parameters::param_name_temperature,
                                                             mTemperatureSlider));
     
-    addAndMakeVisible(&mOutputGainSlider);
-    mOutputGainSlider.setSliderStyle(Slider::SliderStyle::RotaryVerticalDrag);
-    mOutputGainSlider.setTextBoxStyle(Slider::TextEntryBoxPosition::TextBoxBelow, false, 50, 20);
-    mOutputGainSlider.setColour(Slider::ColourIds::rotarySliderFillColourId, Colours::lime);
-    mOutputGainSlider.setColour(Slider::ColourIds::thumbColourId, Colours::white);
-    mGainSliderAttachment.reset(new SliderAttachment(mAVTS,
-                                                     rave_parameters::param_name_outputgain,
-                                                     mOutputGainSlider));
+    addAndMakeVisible(&mWetGainSlider);
+    mWetGainSlider.setSliderStyle(Slider::SliderStyle::RotaryVerticalDrag);
+    mWetGainSlider.setTextBoxStyle(Slider::TextEntryBoxPosition::TextBoxBelow, false, 50, 20);
+    const Colour wetColour(0xff00fef2);
+    mWetGainSlider.setColour(Slider::ColourIds::rotarySliderFillColourId, wetColour);
+    mWetGainSlider.setColour(Slider::ColourIds::thumbColourId, Colours::white);
+    mWetSliderAttachment.reset(new SliderAttachment(mAVTS,
+                                                     rave_parameters::param_name_wetgain,
+                                                     mWetGainSlider));
+    
+    addAndMakeVisible(&mDryGainSlider);
+    mDryGainSlider.setSliderStyle(Slider::SliderStyle::RotaryVerticalDrag);
+    mDryGainSlider.setTextBoxStyle(Slider::TextEntryBoxPosition::TextBoxBelow, false, 50, 20);
+    mDryGainSlider.setColour(Slider::ColourIds::rotarySliderFillColourId, Colours::lime);
+    mDryGainSlider.setColour(Slider::ColourIds::thumbColourId, Colours::white);
+    mDrySliderAttachment.reset(new SliderAttachment(mAVTS,
+                                                     rave_parameters::param_name_drygain,
+                                                     mDryGainSlider));
     
     addAndMakeVisible(&mTogglePrior);
     mTogglePrior.setButtonText("Use Prior");
@@ -47,10 +58,18 @@ RAVEAuditionAudioProcessorEditor::RAVEAuditionAudioProcessorEditor (RAVEAudition
     
     addAndMakeVisible(&mImportButton);
     mImportButton.setButtonText("IMPORT");
+    mImportButton.setClickingTogglesState(true);
+    mImportButtonAttachment.reset(new ButtonAttachment(mAVTS,
+                                                       rave_parameters::param_name_importbutton,
+                                                       mImportButton));
     
-    addAndMakeVisible(&mOutputGainLabel);
-    mOutputGainLabel.setText("GAIN", NotificationType::dontSendNotification);
-    mOutputGainLabel.setJustificationType(Justification::centred);
+    addAndMakeVisible(&mWetGainLabel);
+    mWetGainLabel.setText("WET", NotificationType::dontSendNotification);
+    mWetGainLabel.setJustificationType(Justification::centred);
+    
+    addAndMakeVisible(&mDryGainLabel);
+    mDryGainLabel.setText("DRY", NotificationType::dontSendNotification);
+    mDryGainLabel.setJustificationType(Justification::centred);
     
     addAndMakeVisible(&mTemperatureLabel);
     mTemperatureLabel.setText("HEAT", NotificationType::dontSendNotification);
@@ -72,10 +91,6 @@ void RAVEAuditionAudioProcessorEditor::paint (juce::Graphics& g)
 {
     // (Our component is opaque, so we must completely fill the background with a solid colour)
     g.fillAll (APPLE_BLACK);
-
-//    g.setColour (juce::Colours::white);
-//    g.setFont (15.0f);
-//    g.drawFittedText ("Hello World!", getLocalBounds(), juce::Justification::centred, 1);
 }
 
 void RAVEAuditionAudioProcessorEditor::resized()
@@ -83,23 +98,24 @@ void RAVEAuditionAudioProcessorEditor::resized()
     // This is generally where you'll want to lay out the positions of any
     // subcomponents in your editor..
     
-//    auto bounds = getLocalBounds();
-//    const int h = bounds.getHeight();
-//    const int w = bounds.getWidth();
-    
     mLogo->setBoundsRelative(0.f, 0.f, 1.f, 0.7f);
     
     Rectangle<float> mRelBounds { 0.f, 0.f, 1.f, 1.f };
     mRelBounds.removeFromBottom(0.075f);
     auto bottomBounds = mRelBounds.removeFromBottom(0.3f);
-    auto gainLabelBounds = mRelBounds.removeFromBottom(0.1f);
-    auto temperatureLabelBounds = gainLabelBounds;
+    auto wetLabelBounds = mRelBounds.removeFromBottom(0.1f);
+    auto temperatureLabelBounds = wetLabelBounds;
+    auto dryLabelBounds = temperatureLabelBounds;
     
-    gainLabelBounds.removeFromLeft(0.6666666f);
-    mOutputGainLabel.setBoundsRelative(gainLabelBounds);
+    wetLabelBounds.removeFromLeft(0.6666666f);
+    mWetGainLabel.setBoundsRelative(wetLabelBounds);
     
-    temperatureLabelBounds.removeFromRight(0.6666666f);
+    temperatureLabelBounds.removeFromRight(0.3333333f);
+    temperatureLabelBounds.removeFromLeft(0.3333333f);
     mTemperatureLabel.setBoundsRelative(temperatureLabelBounds);
+    
+    dryLabelBounds.removeFromRight(0.6666666f);
+    mDryGainLabel.setBoundsRelative(dryLabelBounds);
     
     mRelBounds.removeFromTop(0.05f);
     auto topBounds = mRelBounds.removeFromTop(0.05f);
@@ -112,7 +128,8 @@ void RAVEAuditionAudioProcessorEditor::resized()
     toggleBounds.removeFromRight(0.8f);
     mTogglePrior.setBoundsRelative(toggleBounds);
     
-    mTemperatureSlider.setBoundsRelative(bottomBounds.removeFromLeft(0.3333333f));
-    mOutputGainSlider.setBoundsRelative(bottomBounds.removeFromRight(0.3333333f));
+    mWetGainSlider.setBoundsRelative(bottomBounds.removeFromRight(0.3333333f));
+    mTemperatureSlider.setBoundsRelative(bottomBounds.removeFromRight(0.3333333f));
+    mDryGainSlider.setBoundsRelative(bottomBounds.removeFromRight(0.3333333f));
     
 }

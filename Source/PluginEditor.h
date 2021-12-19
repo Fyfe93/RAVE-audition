@@ -40,8 +40,11 @@ private:
     
     std::unique_ptr<ImageComponent> mLogo;
     
-    Slider mOutputGainSlider;
-    std::unique_ptr<SliderAttachment> mGainSliderAttachment;
+    Slider mWetGainSlider;
+    std::unique_ptr<SliderAttachment> mWetSliderAttachment;
+    
+    Slider mDryGainSlider;
+    std::unique_ptr<SliderAttachment> mDrySliderAttachment;
     
     Slider mTemperatureSlider;
     std::unique_ptr<SliderAttachment> mTemperatureSliderAttachment;
@@ -52,7 +55,8 @@ private:
     TextButton mImportButton;
     std::unique_ptr<ButtonAttachment> mImportButtonAttachment;
     
-    Label mOutputGainLabel;
+    Label mWetGainLabel;
+    Label mDryGainLabel;
     Label mTemperatureLabel;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (RAVEAuditionAudioProcessorEditor)

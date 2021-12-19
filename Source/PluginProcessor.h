@@ -13,21 +13,25 @@
 #include <torch/script.h>
 //#include <torch/csrc/jit/runtime/graph_executor.h>
 //#include <torch/csrc/jit/serialization/export.h>
+#include "EngineUpdater.h"
 #include "FifoBuffer.h"
 #include "Rave.h"
 
 #define DEFAULT_FIFO_LENGTH 2048
+#define EPSILON 0.0000001
 
 namespace rave_parameters
 {
     const String param_name_temperature {"temperature"};
-    const String param_name_outputgain {"output_gain"};
+    const String param_name_wetgain {"wet_gain"};
+    const String param_name_drygain {"dry_gain"};
     const String param_name_toggleprior {"toggle_prior"};
+    const String param_name_importbutton {"import_button"};
 }
 //==============================================================================
 /**
 */
-class RAVEAuditionAudioProcessor  : public juce::AudioProcessor
+class RAVEAuditionAudioProcessor  : public juce::AudioProcessor, public juce::AudioProcessorValueTreeState::Listener
 {
 public:
     //==============================================================================
@@ -67,13 +71,21 @@ public:
     //==============================================================================
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
+    void parameterChanged (const String& parameterID, float newValue) override;
+    
+    auto mute() -> void;
+    auto unmute() -> void;
+    auto getIsMuted() -> const bool;
+    void updateEngine(const std::string modelFile);
+    
+    std::unique_ptr<RAVE> mRave;
 
 private:
     
+    mutable CriticalSection mEngineUpdateMutex;
     juce::AudioProcessorValueTreeState mAVTS;
-    std::unique_ptr<RAVE> mRave;
-//    torch::Tensor mInputTensor;
-
+    std::unique_ptr<FileChooser> fc;
+    std::unique_ptr<juce::ThreadPool> mEngineThreadPool;
     
     /*
     *Allocate some memory to use as the FifoBuffer storage
@@ -97,10 +109,25 @@ private:
     FloatFifo mOutputFifo;
     
     std::atomic<float>* mTemperatureParameterValue;
-    std::atomic<float>* mOutputGainParameterValue;
+    std::atomic<float>* mWetGainParameterValue;
+    std::atomic<float>* mDryGainParameterValue;
     std::atomic<float>* mTogglePriorParameterValue;
+    std::atomic<bool> mIsMuted { true };
     
-    LinearSmoothedValue<float> mSmoothedOutputGain;
+    enum class muting : int
+    {
+        ignore = 0,
+        mute,
+        unmute
+    };
+    
+    std::atomic<muting> mFadeScheduler { muting::mute };
+    LinearSmoothedValue<float> mSmoothedFadeInOut;
+    
+    LinearSmoothedValue<float> mSmoothedWetGain;
+    LinearSmoothedValue<float> mSmoothedDryGain;
+    
+    
     
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (RAVEAuditionAudioProcessor)

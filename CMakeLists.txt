@@ -118,7 +118,9 @@ target_sources(rave-audition
         Source/PluginEditor.cpp
         Source/PluginProcessor.cpp
         Source/Rave.h
-        Source/FifoBuffer.h)
+        Source/FifoBuffer.h
+        Source/EngineUpdater.cpp
+        Source/EngineUpdater.h)
 
 add_images_from_directory(${TargetName} Resources)
 

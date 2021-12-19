@@ -22,20 +22,21 @@ RAVEAuditionAudioProcessor::RAVEAuditionAudioProcessor()
                        ), mAVTS(*this, nullptr, Identifier ("RAVEValueTree"), createParameterLayout())
 #endif
 {
-    mRave.reset(new RAVE("/Users/andrewfyfe/Developer/projects/qosmo/rave-audition/Resources/speech/speech_realtime.ts"));
-    
-//    unsigned int inputSize = mRave->decode_explosion;
-    
     FloatFifo* inputfifo_p=&mInputFifo;
     FloatFifo* outputfifo_p=&mOutputFifo;
 
     FifoBuffer_init(inputfifo_p,DEFAULT_FIFO_LENGTH,float, mInputFifoBuffer);
-    
     FifoBuffer_init(outputfifo_p,DEFAULT_FIFO_LENGTH,float, mOutputFifoBuffer);
     
     mTemperatureParameterValue = mAVTS.getRawParameterValue(rave_parameters::param_name_temperature);
-    mOutputGainParameterValue = mAVTS.getRawParameterValue(rave_parameters::param_name_outputgain);
+    mWetGainParameterValue = mAVTS.getRawParameterValue(rave_parameters::param_name_wetgain);
+    mDryGainParameterValue = mAVTS.getRawParameterValue(rave_parameters::param_name_drygain);
     mTogglePriorParameterValue = mAVTS.getRawParameterValue(rave_parameters::param_name_toggleprior);
+    
+    mEngineThreadPool = std::make_unique<ThreadPool>(1);
+    mRave.reset(new RAVE());
+    
+    mAVTS.addParameterListener(rave_parameters::param_name_importbutton, this);
 
 }
 
@@ -115,7 +116,9 @@ void RAVEAuditionAudioProcessor::prepareToPlay (double sampleRate, int samplesPe
     FloatFifo* outputfifo_p=&mOutputFifo;
     FifoBuffer_flush(inputfifo_p);
     FifoBuffer_flush(outputfifo_p);
-    mSmoothedOutputGain.reset(sampleRate, 0.1);
+    mSmoothedWetGain.reset(sampleRate, 0.1);
+    mSmoothedDryGain.reset(sampleRate, 0.1);
+    mSmoothedFadeInOut.reset(sampleRate, 0.2);
 }
 
 void RAVEAuditionAudioProcessor::releaseResources()
@@ -167,10 +170,20 @@ void RAVEAuditionAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     
     const float temperatureVal = mTemperatureParameterValue->load();
     const bool usePrior = static_cast<bool>(mTogglePriorParameterValue->load());
-    mSmoothedOutputGain.setTargetValue(mOutputGainParameterValue->load());
+    mSmoothedWetGain.setTargetValue(mWetGainParameterValue->load());
+    mSmoothedDryGain.setTargetValue(mDryGainParameterValue->load());
+    
+    const muting muteConfig = mFadeScheduler.load();
 
-//    for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
-//        buffer.clear (i, 0, buffer.getNumSamples());
+    if(muteConfig == muting::mute)
+    {
+        mSmoothedFadeInOut.setTargetValue(0.f);
+    }
+    else if (muteConfig == muting::unmute)
+    {
+        mSmoothedFadeInOut.setTargetValue(1.f);
+        mIsMuted.store(false);
+    }
 
     FloatVectorOperations::add(channelL, channelR, nSamples);
     FloatVectorOperations::multiply(channelL, 0.5f, nSamples);
@@ -190,25 +203,43 @@ void RAVEAuditionAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         int64_t sizes = {mFifoSize};
         at::Tensor output;
         
-        if (usePrior) {
-            output = mRave->sample_from_prior(1, temperatureVal);
-        }
-        else
-        {
-            at::Tensor frame = torch::from_blob(mTempBuffer, sizes);
+        if (mRave.get() && !mIsMuted.load()) {
+            
+            if (usePrior) {
+                output = mRave->sample_from_prior(temperatureVal);
+            }
+            else
+            {
+                at::Tensor frame = torch::from_blob(mTempBuffer, sizes);
 
-            frame = torch::reshape(frame, {1,1,mFifoSize});
+                frame = torch::reshape(frame, {1,1,mFifoSize});
 
-            std::vector<torch::jit::IValue> inputs_rave { frame };
-            output = mRave->model.forward(inputs_rave).toTensor();
-        }
-
-        for (int64_t i = 0; i < sizes; ++i) {
+                std::vector<torch::jit::IValue> inputs_rave { frame };
+                output = mRave->model.forward(inputs_rave).toTensor();
+            }
+            
             auto outputData = output.index({0,torch::indexing::Slice()});      // index the proper output channel
             auto outputDataPtr = outputData.data_ptr<float>();
             
-            FifoBuffer_write(outputfifo_p, outputDataPtr[i]);
+            
+            for (int64_t i = 0; i < sizes; ++i) {
+                FifoBuffer_write(outputfifo_p,
+                                 ((outputDataPtr[i] * mSmoothedWetGain.getNextValue() * mSmoothedFadeInOut.getNextValue()) + (mTempBuffer[i] * mSmoothedDryGain.getNextValue())));
+            }
+            
+            if (mSmoothedFadeInOut.getCurrentValue() < EPSILON) {
+                mIsMuted.store(true);
+            }
+            
         }
+        else
+        {
+            for (int64_t i = 0; i < sizes; ++i) {
+                FifoBuffer_write(outputfifo_p,
+                                 (mTempBuffer[i] * mSmoothedDryGain.getNextValue()));
+            }
+        }
+
         
     }
     
@@ -217,7 +248,7 @@ void RAVEAuditionAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         for (int i = 0; i < nSamples; ++i) {
             float outSample;
             FifoBuffer_read(outputfifo_p, outSample);
-            channelL[i] = channelR[i] = outSample * mSmoothedOutputGain.getNextValue();
+            channelL[i] = channelR[i] = outSample;
         }
         
     }
@@ -269,13 +300,81 @@ auto RAVEAuditionAudioProcessor::createParameterLayout() -> AudioProcessorValueT
 {
     std::vector<std::unique_ptr<RangedAudioParameter>> params;
     
-    params.push_back (std::make_unique<AudioParameterFloat> (rave_parameters::param_name_outputgain, rave_parameters::param_name_outputgain, 0.0f, 1.0f, 1.f));
+    params.push_back (std::make_unique<AudioParameterFloat> (rave_parameters::param_name_wetgain, rave_parameters::param_name_wetgain, 0.0f, 1.0f, 1.f));
+    
+    params.push_back (std::make_unique<AudioParameterFloat> (rave_parameters::param_name_drygain, rave_parameters::param_name_drygain, 0.0f, 1.0f, 0.5f));
     
     NormalisableRange<float> normrange{-15.f, 15.f, 0.01f};
-    params.push_back (std::make_unique<AudioParameterFloat> (rave_parameters::param_name_temperature, rave_parameters::param_name_temperature, normrange, 0.1f));
+    params.push_back (std::make_unique<AudioParameterFloat> (rave_parameters::param_name_temperature, rave_parameters::param_name_temperature, normrange, 0.f));
     
     params.push_back (std::make_unique<AudioParameterBool> (rave_parameters::param_name_toggleprior, rave_parameters::param_name_toggleprior, false));
     
+    params.push_back (std::make_unique<AudioParameterBool> (rave_parameters::param_name_importbutton, rave_parameters::param_name_importbutton, false));
+    
     return { params.begin(), params.end() };
     
+}
+
+auto RAVEAuditionAudioProcessor::mute() -> void
+{
+    mFadeScheduler.store(muting::mute);
+}
+
+auto RAVEAuditionAudioProcessor::unmute() -> void
+{
+    mFadeScheduler.store(muting::unmute);
+}
+
+auto RAVEAuditionAudioProcessor::getIsMuted() -> const bool
+{
+    return mIsMuted.load();
+}
+
+void RAVEAuditionAudioProcessor::updateEngine(const std::string modelFile)
+{
+    juce::ScopedLock irCalculationlock(mEngineUpdateMutex);
+    if (mEngineThreadPool)
+    {
+        mEngineThreadPool->removeAllJobs(true, 100);
+    }
+
+    mEngineThreadPool->addJob(new UpdateEngineJob(*this, modelFile), true);
+}
+
+void RAVEAuditionAudioProcessor::parameterChanged (const String& parameterID, float newValue)
+{
+    if(parameterID == rave_parameters::param_name_importbutton)
+    {
+        fc.reset (new FileChooser ("Choose a file to open...", File::getSpecialLocation(File::SpecialLocationType::userHomeDirectory),
+                                   "*.ts;*.ckpt", true));
+
+        fc->launchAsync (FileBrowserComponent::openMode
+                             | FileBrowserComponent::canSelectFiles,
+                         [this] (const FileChooser& chooser)
+                         {
+                             std::string chosen;
+                             auto results = chooser.getURLResults();
+
+                            for (auto result : results) {
+                                if (result.isLocalFile()) {
+                                    chosen = result.getLocalFile().getFullPathName().toStdString();
+                                }
+                                else
+                                {
+                                    chosen = result.toString (false).toStdString();
+                                }
+                                
+                            }
+                                    
+                             AlertWindow::showAsync (MessageBoxOptions()
+                                                       .withIconType (MessageBoxIconType::InfoIcon)
+                                                       .withTitle ("File Chooser...")
+                                                       .withMessage ("You picked: " + chosen)
+                                                       .withButton ("OK"),
+                                                     nullptr);
+            
+            this->updateEngine( chosen );
+        });
+    }
+
 }
