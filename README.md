@@ -3,6 +3,8 @@
 # RAVE-audition
 VST/AU Plugin for Auditioning RAVE Models in Real-time
 
+Check out Antoine's great work in the [original RAVE repository](https://github.com/caillonantoine/RAVE)!
+
 ### Building the C++ project
 - Add Juce 6.1.4 as a directory called JUCE in the main working directory or clone the repository.
   - `ln -s <JUCE-DIR> .`  OR
