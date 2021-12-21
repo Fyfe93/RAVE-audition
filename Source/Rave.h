@@ -32,48 +32,46 @@ struct RAVE {
     }
     
   void load_model(const std::string& rave_model_file) {
-      
-      try {
-          torch::NoGradGuard no_grad;
-          this->model = torch::jit::load(rave_model_file);
-      }
-      catch (const c10::Error& e) {
-          std::cerr << e.what();
-          std::cerr << e.msg();
-          std::cerr << "error loading the model\n";
-          return -1;
-      }
-    
-        this->sr = 48000;
-        this->decode_explosion = 2048; // TODO: How to read this from model?
-        this->z_per_second = (int)48000/2048;
-        this->prior_temp_size = 512;
+    try {
+        torch::NoGradGuard no_grad;
+        this->model = torch::jit::load(rave_model_file);
+    }
+    catch (const c10::Error& e) {
+        std::cerr << e.what();
+        std::cerr << e.msg();
+        std::cerr << "error loading the model\n";
+    }
 
-        auto named_buffers = this->model.named_buffers();
-        for (auto const& i: named_buffers) {
-            if (i.name == "_rave.latent_size") {
-                std::cout<<i.name<<std::endl;
-                std::cout << i.value << std::endl;
-            }
-            if (i.name == "_rave.decode_params") {
-                std::cout<<i.name<<std::endl;
-                std::cout << i.value << std::endl;
-                this->decode_explosion = i.value[1].item<int>();
-            }
-            if (i.name == "_rave.sampling_rate") {
-                std::cout<<i.name<<std::endl;
-                std::cout << i.value << std::endl;
-                this->sr = i.value.item<int>();
-            }
-            if (i.name == "_prior.previous_step") {
-                std::cout<<i.name<<std::endl;
-                std::cout << i.value.sizes()[1] << std::endl;
-                this->prior_temp_size = (int) i.value.sizes()[1];
-            }
+    this->sr = 48000;
+    this->decode_explosion = 2048;
+    this->z_per_second = (int)48000/2048;
+    this->prior_temp_size = 512;
 
-            inputs_rave_decode.clear();
-            inputs_rave_decode.push_back(torch::ones({1,1,decode_explosion}));
+    auto named_buffers = this->model.named_buffers();
+    for (auto const& i: named_buffers) {
+        if (i.name == "_rave.latent_size") {
+            std::cout<<i.name<<std::endl;
+            std::cout << i.value << std::endl;
         }
+        if (i.name == "_rave.decode_params") {
+            std::cout<<i.name<<std::endl;
+            std::cout << i.value << std::endl;
+            this->decode_explosion = i.value[1].item<int>();
+        }
+        if (i.name == "_rave.sampling_rate") {
+            std::cout<<i.name<<std::endl;
+            std::cout << i.value << std::endl;
+            this->sr = i.value.item<int>();
+        }
+        if (i.name == "_prior.previous_step") {
+            std::cout<<i.name<<std::endl;
+            std::cout << i.value.sizes()[1] << std::endl;
+            this->prior_temp_size = (int) i.value.sizes()[1];
+        }
+
+        inputs_rave_decode.clear();
+        inputs_rave_decode.push_back(torch::ones({1,1,decode_explosion}));
+    }
   }
   
   torch::Tensor sample_from_prior (const float temperature) {
