@@ -210,6 +210,7 @@ void RAVEAuditionAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             }
             else
             {
+                c10::InferenceMode guard;
                 at::Tensor frame = torch::from_blob(mTempBuffer, sizes);
 
                 frame = torch::reshape(frame, {1,1,mFifoSize});

@@ -27,13 +27,13 @@ struct RAVE {
 //    }
     
     torch::jit::getProfilingMode() = false;
-    torch::NoGradGuard no_grad;
+    c10::InferenceMode guard;
     torch::jit::setGraphExecutorOptimize(true);
     }
     
   void load_model(const std::string& rave_model_file) {
     try {
-        torch::NoGradGuard no_grad;
+        c10::InferenceMode guard;
         this->model = torch::jit::load(rave_model_file);
     }
     catch (const c10::Error& e) {
@@ -69,13 +69,14 @@ struct RAVE {
             this->prior_temp_size = (int) i.value.sizes()[1];
         }
 
-        inputs_rave.clear();
-        inputs_rave.push_back(torch::ones({1,1,decode_explosion}));
-    }
+    } 
+    c10::InferenceMode guard;
+    inputs_rave.clear();
+    inputs_rave.push_back(torch::ones({1,1,decode_explosion}));
   }
   
   torch::Tensor sample_from_prior (const float temperature) {
-    torch::NoGradGuard no_grad;
+    c10::InferenceMode guard;
 
     inputs_rave[0] = torch::ones({1,1,1}) * temperature;
     const auto prior = this->model.get_method("prior")(inputs_rave).toTensor();
@@ -87,7 +88,7 @@ struct RAVE {
   }
 
   torch::Tensor encode_decode (torch::Tensor input) {
-    torch::NoGradGuard no_grad;
+    c10::InferenceMode guard;
 
     inputs_rave[0] = input;
     const auto y = this->model(inputs_rave).toTensor();
