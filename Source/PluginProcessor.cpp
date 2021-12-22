@@ -210,16 +210,15 @@ void RAVEAuditionAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
             }
             else
             {
+                c10::InferenceMode guard;
                 at::Tensor frame = torch::from_blob(mTempBuffer, sizes);
 
                 frame = torch::reshape(frame, {1,1,mFifoSize});
 
-                std::vector<torch::jit::IValue> inputs_rave { frame };
-                output = mRave->model.forward(inputs_rave).toTensor();
+                output = mRave->encode_decode(frame);
             }
             
-            auto outputData = output.index({0,torch::indexing::Slice()});      // index the proper output channel
-            auto outputDataPtr = outputData.data_ptr<float>();
+            auto outputDataPtr = output.data_ptr<float>();
             
             
             for (int64_t i = 0; i < sizes; ++i) {

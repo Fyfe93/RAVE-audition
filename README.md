@@ -16,6 +16,3 @@ Check out Antoine's great work in the [original RAVE repository](https://github.
 
 ### Prebuilt Plugins
 Coming soon!
-
-### Caveats
-The plugin currently has a memory leak

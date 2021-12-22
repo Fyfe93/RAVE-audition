@@ -12,7 +12,7 @@ struct RAVE {
   int z_per_second;
   int prior_temp_size;
     
-  std::vector<torch::jit::IValue> inputs_rave_decode;
+  std::vector<torch::jit::IValue> inputs_rave;
 
   RAVE() {
 //    torch::init_num_threads();
@@ -27,13 +27,13 @@ struct RAVE {
 //    }
     
     torch::jit::getProfilingMode() = false;
-    torch::NoGradGuard no_grad;
+    c10::InferenceMode guard;
     torch::jit::setGraphExecutorOptimize(true);
     }
     
   void load_model(const std::string& rave_model_file) {
     try {
-        torch::NoGradGuard no_grad;
+        c10::InferenceMode guard;
         this->model = torch::jit::load(rave_model_file);
     }
     catch (const c10::Error& e) {
@@ -69,27 +69,28 @@ struct RAVE {
             this->prior_temp_size = (int) i.value.sizes()[1];
         }
 
-        inputs_rave_decode.clear();
-        inputs_rave_decode.push_back(torch::ones({1,1,decode_explosion}));
-    }
+    } 
+    c10::InferenceMode guard;
+    inputs_rave.clear();
+    inputs_rave.push_back(torch::ones({1,1,decode_explosion}));
   }
   
   torch::Tensor sample_from_prior (const float temperature) {
+    c10::InferenceMode guard;
 
-    std::vector<torch::jit::IValue> inputs_rave_prior;
-    inputs_rave_prior.push_back(torch::ones({1,1,1}) * temperature);
+    inputs_rave[0] = torch::ones({1,1,1}) * temperature;
+    const auto prior = this->model.get_method("prior")(inputs_rave).toTensor();
 
-    const auto prior = this->model.get_method("prior")(inputs_rave_prior).toTensor();
-
-    inputs_rave_decode[0] = prior;
-    const auto y = this->model.get_method("decode")(inputs_rave_decode).toTensor();
+    inputs_rave[0] = prior;
+    const auto y = this->model.get_method("decode")(inputs_rave).toTensor();
 
     return y.squeeze(0); // remove batch dim
   }
 
   torch::Tensor encode_decode (torch::Tensor input) {
-    std::vector<torch::jit::IValue> inputs_rave;
-    inputs_rave.push_back(input);
+    c10::InferenceMode guard;
+
+    inputs_rave[0] = input;
     const auto y = this->model(inputs_rave).toTensor();
 
     return y.squeeze(0); // remove batch dim
