@@ -156,8 +156,8 @@ bool RAVEAuditionAudioProcessor::isBusesLayoutSupported (const BusesLayout& layo
 void RAVEAuditionAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
     juce::ScopedNoDenormals noDenormals;
-    auto totalNumInputChannels  = getTotalNumInputChannels();
-    auto totalNumOutputChannels = getTotalNumOutputChannels();
+//    auto totalNumInputChannels  = getTotalNumInputChannels();
+//    auto totalNumOutputChannels = getTotalNumOutputChannels();
     
     const int nSamples = buffer.getNumSamples();
     const int nChannels = buffer.getNumChannels();
@@ -165,8 +165,20 @@ void RAVEAuditionAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     FloatFifo* inputfifo_p=&mInputFifo;
     FloatFifo* outputfifo_p=&mOutputFifo;
     
-    float* channelL = buffer.getWritePointer(0);
-    float* channelR = buffer.getWritePointer(1);
+    float* channelL;
+    float* channelR;
+    
+    if (nChannels > 0 && nChannels < 2) {
+        channelL = buffer.getWritePointer(0);
+        channelR = buffer.getWritePointer(0);
+    } else if(nChannels > 1 && nChannels < 3) {
+        channelL = buffer.getWritePointer(0);
+        channelR = buffer.getWritePointer(1);
+    }
+    else {
+        buffer.clear();
+        return;
+    }
     
     const float temperatureVal = mTemperatureParameterValue->load();
     const bool usePrior = static_cast<bool>(mTogglePriorParameterValue->load());

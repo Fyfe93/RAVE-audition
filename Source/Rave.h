@@ -40,6 +40,7 @@ struct RAVE {
         std::cerr << e.what();
         std::cerr << e.msg();
         std::cerr << "error loading the model\n";
+        return;
     }
 
     this->sr = 48000;
