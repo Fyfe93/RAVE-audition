@@ -14,6 +14,3 @@ VST/AU Plugin for Auditioning RAVE Models in Real-time
 
 ### Prebuilt Plugins
 Coming soon!
-
-### Caveats
-The plugin currently has a memory leak
