@@ -39,6 +39,11 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Release")
 endif()
 
+set(MACOSX_RPATH TRUE)
+set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
+set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+set(CMAKE_INSTALL_RPATH "@loader_path/../Resources/libtorch")
+
 set(CMAKE_CXX_STANDARD 17)
 #set(CMAKE_LINKER_FLAGS "${CMAKE_LINKER_FLAGS} ")
 set(CMAKE_CXX_FLAGS "-Wall")
@@ -146,6 +151,21 @@ target_compile_definitions(rave-audition
 
 # juce_add_binary_data(ConsoleAppData SOURCES ...)
 
+# Automatically bundle libtorch into the targets
+get_target_property(active_formats rave-audition JUCE_FORMATS)
+set(libtorch_files
+            "${TORCH_INSTALL_PREFIX}/lib/libtorch.dylib"
+            "${TORCH_INSTALL_PREFIX}/lib/libtorch_cpu.dylib"
+            "${TORCH_INSTALL_PREFIX}/lib/libc10.dylib")
+foreach(kind IN LISTS active_formats)
+    foreach(resource_file IN LISTS libtorch_files)
+        target_sources(rave-audition_${kind} PRIVATE ${resource_file})
+        set_source_files_properties(${resource_file} PROPERTIES
+          MACOSX_PACKAGE_LOCATION "Resources/libtorch"
+        )
+    endforeach()
+endforeach()
+
 # `target_link_libraries` links libraries and JUCE modules to other libraries or executables. Here,
 # we're linking our executable target to the `juce::juce_core` module. Inter-module dependencies are
 # resolved automatically. If you'd generated a binary data target above, you would need to link to
@@ -156,7 +176,7 @@ target_link_libraries(rave-audition
         juce::juce_core
         juce::juce_audio_utils
         juce::juce_audio_basics
-        "${TORCH_LIBRARIES}"
+        torch
     PUBLIC
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags
