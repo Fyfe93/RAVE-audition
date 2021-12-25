@@ -156,6 +156,7 @@ get_target_property(active_formats rave-audition JUCE_FORMATS)
 set(libtorch_files
             "${TORCH_INSTALL_PREFIX}/lib/libtorch.dylib"
             "${TORCH_INSTALL_PREFIX}/lib/libtorch_cpu.dylib"
+            "${TORCH_INSTALL_PREFIX}/lib/libiomp5.dylib"
             "${TORCH_INSTALL_PREFIX}/lib/libc10.dylib")
 foreach(kind IN LISTS active_formats)
     foreach(resource_file IN LISTS libtorch_files)
