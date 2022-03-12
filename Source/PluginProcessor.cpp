@@ -119,6 +119,7 @@ void RAVEAuditionAudioProcessor::prepareToPlay (double sampleRate, int samplesPe
     mSmoothedWetGain.reset(sampleRate, 0.1);
     mSmoothedDryGain.reset(sampleRate, 0.1);
     mSmoothedFadeInOut.reset(sampleRate, 0.2);
+    
 }
 
 void RAVEAuditionAudioProcessor::releaseResources()
@@ -156,11 +157,15 @@ bool RAVEAuditionAudioProcessor::isBusesLayoutSupported (const BusesLayout& layo
 void RAVEAuditionAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
     juce::ScopedNoDenormals noDenormals;
-//    auto totalNumInputChannels  = getTotalNumInputChannels();
-//    auto totalNumOutputChannels = getTotalNumOutputChannels();
+    auto totalNumInputChannels  = getTotalNumInputChannels();
+    auto totalNumOutputChannels = getTotalNumOutputChannels();
     
     const int nSamples = buffer.getNumSamples();
     const int nChannels = buffer.getNumChannels();
+    
+    for (int i = totalNumInputChannels; i < totalNumOutputChannels; ++i) {
+        buffer.clear (i, 0, nSamples);
+    }
     
     FloatFifo* inputfifo_p=&mInputFifo;
     FloatFifo* outputfifo_p=&mOutputFifo;
@@ -196,71 +201,90 @@ void RAVEAuditionAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         mSmoothedFadeInOut.setTargetValue(1.f);
         mIsMuted.store(false);
     }
-
+    
+    const int64_t size = {mFifoSize};
+    
+    for (int i = 0; i < size; ++i) {
+        mTempBuffer[i] = 0.f;
+    }
+    
     FloatVectorOperations::add(channelL, channelR, nSamples);
     FloatVectorOperations::multiply(channelL, 0.5f, nSamples);
     FloatVectorOperations::copy(channelR, channelL, nSamples);
     
-    for (int i = 0; i < nSamples; ++i) {
-        FifoBuffer_write(inputfifo_p, channelL[i]);
-    }
-
-    while (FifoBuffer_is_full(inputfifo_p)) {
+    const int64_t minSamples = !(nSamples<size)?size:nSamples;
+    int pos = nSamples;
+    int index = 0;
+    
+    while (pos > 0) {
         
-        for (int i = 0; i < mFifoSize; i++) {
-            FifoBuffer_read(inputfifo_p, mTempBuffer[i]);
+        for (int i = 0; i < minSamples; ++i) {
+            FifoBuffer_write(inputfifo_p, channelL[index + i]);
         }
-        
-        // size of the process buffer data
-        int64_t sizes = {mFifoSize};
-        at::Tensor output;
-        
-        if (mRave.get() && !mIsMuted.load()) {
+
+        while (FifoBuffer_is_full(inputfifo_p)) {
             
-            if (usePrior) {
-                output = mRave->sample_from_prior(temperatureVal);
+            FifoBuffer_flush(outputfifo_p);
+            
+            for (int i = 0; i < size; i++) {
+                FifoBuffer_read(inputfifo_p, mTempBuffer[i]);
+            }
+            
+            at::Tensor output;
+            
+            if (mRave.get() && !mIsMuted.load()) {
+                
+                if (usePrior) {
+                    output = mRave->sample_from_prior(temperatureVal);
+                }
+                else
+                {
+                    c10::InferenceMode guard;
+                    at::Tensor frame = torch::from_blob(mTempBuffer, size);
+
+                    frame = torch::reshape(frame, {1,1,size});
+
+                    output = mRave->encode_decode(frame);
+                }
+                
+                auto outputDataPtr = output.data_ptr<float>();
+                
+                
+                for (int64_t i = 0; i < size; ++i) {
+                    FifoBuffer_write(outputfifo_p,
+                                     ((outputDataPtr[i] * mSmoothedWetGain.getNextValue() * mSmoothedFadeInOut.getNextValue()) + (mTempBuffer[i] * mSmoothedDryGain.getNextValue())));
+
+                }
+                
+                if (mSmoothedFadeInOut.getCurrentValue() < EPSILON) {
+                    mIsMuted.store(true);
+                }
+                
+                FifoBuffer_flush(inputfifo_p);
+                
             }
             else
             {
-                c10::InferenceMode guard;
-                at::Tensor frame = torch::from_blob(mTempBuffer, sizes);
-
-                frame = torch::reshape(frame, {1,1,mFifoSize});
-
-                output = mRave->encode_decode(frame);
-            }
-            
-            auto outputDataPtr = output.data_ptr<float>();
-            
-            
-            for (int64_t i = 0; i < sizes; ++i) {
-                FifoBuffer_write(outputfifo_p,
-                                 ((outputDataPtr[i] * mSmoothedWetGain.getNextValue() * mSmoothedFadeInOut.getNextValue()) + (mTempBuffer[i] * mSmoothedDryGain.getNextValue())));
-            }
-            
-            if (mSmoothedFadeInOut.getCurrentValue() < EPSILON) {
-                mIsMuted.store(true);
-            }
-            
-        }
-        else
-        {
-            for (int64_t i = 0; i < sizes; ++i) {
-                FifoBuffer_write(outputfifo_p,
-                                 (mTempBuffer[i] * mSmoothedDryGain.getNextValue()));
+                for (int64_t i = 0; i < size; ++i) {
+                    FifoBuffer_write(outputfifo_p,
+                                     (mTempBuffer[i] * mSmoothedDryGain.getNextValue()));
+                }
             }
         }
 
         
-    }
-    
-    if (FifoBuffer_count(outputfifo_p) >= nSamples)
-    {
-        for (int i = 0; i < nSamples; ++i) {
-            float outSample;
-            FifoBuffer_read(outputfifo_p, outSample);
-            channelL[i] = channelR[i] = outSample;
+        if (FifoBuffer_count(outputfifo_p) >= minSamples)
+        {
+            for (int i = 0; i < minSamples; ++i) {
+                float outSample;
+                FifoBuffer_read(outputfifo_p, outSample);
+                channelL[index + i] = outSample;
+                channelR[index + i] = outSample;
+            }
         }
+        
+        index += minSamples;
+        pos -= minSamples;
         
     }
 }
