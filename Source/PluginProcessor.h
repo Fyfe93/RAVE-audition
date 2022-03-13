@@ -93,9 +93,10 @@ private:
     */
     const int mFifoSize { DEFAULT_FIFO_LENGTH };
     float mInputFifoBuffer[DEFAULT_FIFO_LENGTH];
-    float mOutputFifoBuffer[DEFAULT_FIFO_LENGTH];
     float mTempBuffer[DEFAULT_FIFO_LENGTH];
-    
+    std::vector<float> mHostFifoBuffer;
+    std::vector<float> mOutputFifoBuffer;
+
     float* mInFifoBuffer { nullptr };
     float* mOutFifoBuffer { nullptr };
 
@@ -104,7 +105,8 @@ private:
     * type-specific FifoBuffer definition
     */
     FifoBuffer_typedef(float,FloatFifo);
-
+    
+    FloatFifo mHostFifo;
     FloatFifo mInputFifo;
     FloatFifo mOutputFifo;
     

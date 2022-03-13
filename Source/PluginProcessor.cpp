@@ -24,9 +24,15 @@ RAVEAuditionAudioProcessor::RAVEAuditionAudioProcessor()
 {
     FloatFifo* inputfifo_p=&mInputFifo;
     FloatFifo* outputfifo_p=&mOutputFifo;
-
+    FloatFifo* hostfifo_p=&mHostFifo;
+    
+    mHostFifoBuffer.resize(DEFAULT_FIFO_LENGTH);
+    mOutputFifoBuffer.resize(DEFAULT_FIFO_LENGTH);
+    FifoBuffer_init(hostfifo_p,DEFAULT_FIFO_LENGTH,float, mHostFifoBuffer.data());
     FifoBuffer_init(inputfifo_p,DEFAULT_FIFO_LENGTH,float, mInputFifoBuffer);
-    FifoBuffer_init(outputfifo_p,DEFAULT_FIFO_LENGTH,float, mOutputFifoBuffer);
+    FifoBuffer_init(outputfifo_p,DEFAULT_FIFO_LENGTH,float, mOutputFifoBuffer.data());
+    
+    setLatencySamples (DEFAULT_FIFO_LENGTH);
     
     mTemperatureParameterValue = mAVTS.getRawParameterValue(rave_parameters::param_name_temperature);
     mWetGainParameterValue = mAVTS.getRawParameterValue(rave_parameters::param_name_wetgain);
@@ -112,14 +118,31 @@ void RAVEAuditionAudioProcessor::prepareToPlay (double sampleRate, int samplesPe
     // Use this method as the place to do any pre-playback
     // initialisation that you need..
     
+    FloatFifo* hostfifo_p=&mHostFifo;
     FloatFifo* inputfifo_p=&mInputFifo;
     FloatFifo* outputfifo_p=&mOutputFifo;
+    
     FifoBuffer_flush(inputfifo_p);
     FifoBuffer_flush(outputfifo_p);
     mSmoothedWetGain.reset(sampleRate, 0.1);
     mSmoothedDryGain.reset(sampleRate, 0.1);
     mSmoothedFadeInOut.reset(sampleRate, 0.2);
     
+    mHostFifoBuffer.resize(static_cast<size_t>(samplesPerBlock));
+    FifoBuffer_init(hostfifo_p,samplesPerBlock,float, mHostFifoBuffer.data());
+    
+    const int size = (samplesPerBlock<mFifoSize)?mFifoSize:samplesPerBlock;
+    
+    mOutputFifoBuffer.resize(static_cast<size_t>(size));
+    FifoBuffer_init(outputfifo_p,size,float, mOutputFifoBuffer.data());
+    
+    for (int i = 0; i < mFifoSize; ++i) {
+        mTempBuffer[i] = 0.f;
+    }
+    
+    for (int i = 0; i < size; ++i) {
+        FifoBuffer_write(outputfifo_p, 0.f);
+    }
 }
 
 void RAVEAuditionAudioProcessor::releaseResources()
@@ -167,6 +190,7 @@ void RAVEAuditionAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
         buffer.clear (i, 0, nSamples);
     }
     
+    FloatFifo* hostfifo_p=&mHostFifo;
     FloatFifo* inputfifo_p=&mInputFifo;
     FloatFifo* outputfifo_p=&mOutputFifo;
     
@@ -212,19 +236,29 @@ void RAVEAuditionAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     FloatVectorOperations::multiply(channelL, 0.5f, nSamples);
     FloatVectorOperations::copy(channelR, channelL, nSamples);
     
-    const int64_t minSamples = !(nSamples<size)?size:nSamples;
-    int pos = nSamples;
-    int index = 0;
     
-    while (pos > 0) {
-        
-        for (int i = 0; i < minSamples; ++i) {
-            FifoBuffer_write(inputfifo_p, channelL[index + i]);
+    for (int i = 0; i < nSamples; ++i) {
+        FifoBuffer_write(hostfifo_p, channelL[i]);
+    }
+    
+    if (FifoBuffer_count(outputfifo_p) >= nSamples)
+    {
+        for (int i = 0; i < nSamples; ++i) {
+            float outSample;
+            FifoBuffer_read(outputfifo_p, outSample);
+            channelL[i] = outSample;
+            channelR[i] = outSample;
         }
-
-        while (FifoBuffer_is_full(inputfifo_p)) {
+    }
+    
+    while (!FifoBuffer_is_empty(hostfifo_p)) {
             
-            FifoBuffer_flush(outputfifo_p);
+        float hostSample;
+        FifoBuffer_read(hostfifo_p, hostSample);
+    
+        FifoBuffer_write(inputfifo_p, hostSample);
+
+        if (FifoBuffer_count(inputfifo_p) >= size) {
             
             for (int i = 0; i < size; i++) {
                 FifoBuffer_read(inputfifo_p, mTempBuffer[i]);
@@ -260,8 +294,6 @@ void RAVEAuditionAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                     mIsMuted.store(true);
                 }
                 
-                FifoBuffer_flush(inputfifo_p);
-                
             }
             else
             {
@@ -271,22 +303,9 @@ void RAVEAuditionAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
                 }
             }
         }
-
-        
-        if (FifoBuffer_count(outputfifo_p) >= minSamples)
-        {
-            for (int i = 0; i < minSamples; ++i) {
-                float outSample;
-                FifoBuffer_read(outputfifo_p, outSample);
-                channelL[index + i] = outSample;
-                channelR[index + i] = outSample;
-            }
-        }
-        
-        index += minSamples;
-        pos -= minSamples;
         
     }
+
 }
 
 //==============================================================================
