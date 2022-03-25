@@ -406,16 +406,16 @@ void RAVEAuditionAudioProcessor::parameterChanged (const String& parameterID, fl
                              | FileBrowserComponent::canSelectFiles,
                          [this] (const FileChooser& chooser)
                          {
-                             std::string chosen;
+                             File chosen;
                              auto results = chooser.getURLResults();
 
                             for (auto result : results) {
                                 if (result.isLocalFile()) {
-                                    chosen = result.getLocalFile().getFullPathName().toStdString();
+                                    chosen = result.getLocalFile();
                                 }
                                 else
                                 {
-                                    chosen = result.toString (false).toStdString();
+                                    return;
                                 }
                                 
                             }
@@ -423,11 +423,13 @@ void RAVEAuditionAudioProcessor::parameterChanged (const String& parameterID, fl
                              AlertWindow::showAsync (MessageBoxOptions()
                                                        .withIconType (MessageBoxIconType::InfoIcon)
                                                        .withTitle ("File Chooser...")
-                                                       .withMessage ("You picked: " + chosen)
+                                                     .withMessage ("You picked: " + chosen.getFileName())
                                                        .withButton ("OK"),
                                                      nullptr);
+            if (chosen.getFileExtension() == ".ts" && chosen.getSize() != 0) {
+                this->updateEngine( chosen.getFullPathName().toStdString() );
+            }
             
-            this->updateEngine( chosen );
         });
     }
 

@@ -85,11 +85,11 @@ juce_add_plugin(rave-audition
     # VERSION ...                               # Set this if the plugin version is different to the project version
     # ICON_BIG ...                              # ICON_* arguments specify a path to an image file to use as an icon for the Standalone
     # ICON_SMALL ...
-    COMPANY_NAME Qosmo                          # Specify the name of the plugin's author
-    # IS_SYNTH TRUE/FALSE                       # Is this a synth or an effect?
-    # NEEDS_MIDI_INPUT TRUE/FALSE               # Does the plugin need midi input?
-    # NEEDS_MIDI_OUTPUT TRUE/FALSE              # Does the plugin need midi output?
-    # IS_MIDI_EFFECT TRUE/FALSE                 # Is this plugin a MIDI effect?
+    COMPANY_NAME AndrewFyfe                          # Specify the name of the plugin's author
+    IS_SYNTH FALSE                       # Is this a synth or an effect?
+    NEEDS_MIDI_INPUT FALSE               # Does the plugin need midi input?
+    NEEDS_MIDI_OUTPUT FALSE              # Does the plugin need midi output?
+    IS_MIDI_EFFECT FALSE                 # Is this plugin a MIDI effect?
     # EDITOR_WANTS_KEYBOARD_FOCUS TRUE/FALSE    # Does the editor need keyboard focus?
     COPY_PLUGIN_AFTER_BUILD TRUE        # Should the plugin be installed to a default location after building?
     PLUGIN_MANUFACTURER_CODE NASH               # A four-character manufacturer id with at least one upper-case character
@@ -140,6 +140,7 @@ target_compile_definitions(rave-audition
         # JUCE_WEB_BROWSER and JUCE_USE_CURL would be on by default, but you might not need them.
         JUCE_WEB_BROWSER=0  # If you remove this, add `NEEDS_WEB_BROWSER TRUE` to the `juce_add_console_app` call
         JUCE_USE_CURL=0
+        JUCE_DISPLAY_SPLASH_SCREEN=0
         JUCE_VST3_CAN_REPLACE_VST2=0)    # If you remove this, add `NEEDS_CURL TRUE` to the `juce_add_console_app` call
 
 # If the target needs extra binary assets, they can be added here. The first argument is the name of
